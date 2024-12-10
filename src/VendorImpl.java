@@ -1,3 +1,5 @@
+
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -7,16 +9,13 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 
-public class VendorImpl extends Vendor {
-    private static final String DB_URL = "jdbc:mysql://localhost:3306/vendor";
-    private static final String DB_USER = "root";
-    private static final String DB_PASSWORD = "Harsh@123";
 
+
+public class VendorImpl extends Vendor {
 
     @Override
     public void readProductData() {
-        String localFilePath = "C:/downloadedfiles/product.txt";
-
+        String localFilePath = AppConstants.localFilePath;
         File file = new File(localFilePath);
 
         // Check if the file already exists
@@ -24,9 +23,9 @@ public class VendorImpl extends Vendor {
             // Only download if the file doesn't exist
             System.out.println("File not found locally, downloading...");
             FTPdownloader.downloadFile(
-                "ftp.kartkonnect.net", 21,
-                "ap32_vendor@kartkonnect.net", "sZ(frg6xi!Nw",
-                "/trainee/product.txt", "C:/downloadedfiles/product.txt"
+                AppConstants.FTP_SERVER, AppConstants.FTP_PORT,
+                AppConstants.FTP_USER, AppConstants.FTP_PASSWORD,
+                AppConstants.REMOTE_FILE_PATH, localFilePath
             );
         } else {
             System.out.println("File already exists, skipping download.");
@@ -52,11 +51,12 @@ public class VendorImpl extends Vendor {
                 + "Active BOOLEAN"
                 + ")";
 
-            Connection connection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+            Connection connection = DriverManager.getConnection(AppConstants.DB_URL, AppConstants.DB_USER, AppConstants.DB_PASSWORD);
             BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(new File(localFilePath))));
             Statement statement = connection.createStatement();
             statement.executeUpdate(createTableSQL);
-            System.out.println("Table 'Vendor' created successfully.");
+            connection.setAutoCommit(false);
+            System.out.println("Table 'services.Vendor' created successfully.");
 
             String insertSQL = "INSERT INTO Vendor (SKU, Barcode, QuantityInStock, ETA, Price, SalesPrice, "
                 + "SalesStartDate, SalesEndDate, Title, CategoryID, CategoryName, MSRP, MAP, ShippingCost, "
@@ -65,34 +65,45 @@ public class VendorImpl extends Vendor {
             PreparedStatement preparedStatement = connection.prepareStatement(insertSQL);
 
             String line;
+            int count = 0;
+            int batchSize = 10000;
+            boolean isFirstLine = true;
             while ((line = reader.readLine()) != null) {
                 String[] fields = line.split("\t");
-
+                if (isFirstLine) {
+                    isFirstLine = false;
+                    continue;
+                }
                 // Check if fields array has at least 16 elements
-                if (fields.length >= 16) {
+                if (fields.length <= 15) {
+
                     preparedStatement.setString(1, fields[0]);  // SKU
-                    preparedStatement.setString(2, fields.length > 1 ? fields[1] : null);  // Barcode (optional)
-                    preparedStatement.setInt(3, fields.length > 2 && !fields[2].isEmpty() ? Integer.parseInt(fields[2]) : 0);  // QuantityInStock
-                    preparedStatement.setString(4, fields.length > 3 ? fields[3] : null);  // ETA (optional)
+                    preparedStatement.setString(2, fields[1]);  // Barcode (optional)
+                    preparedStatement.setInt(3, !fields[2].isEmpty() ? Integer.parseInt(fields[2]) : 0);  // QuantityInStock
+                    preparedStatement.setString(4, fields[3]);  // ETA (optional)
 
                     // Parse Price (handle empty strings)
-                    preparedStatement.setDouble(5, parseDoubleOrDefault(fields.length > 4 ? fields[4] : "", 0.0));  // Price
-                    preparedStatement.setDouble(6, parseDoubleOrDefault(fields.length > 5 ? fields[5] : "", 0.0));  // SalesPrice
+                    preparedStatement.setDouble(5, parseDoubleOrDefault(fields[4], 0.0));  // Price
+                    preparedStatement.setDouble(6, parseDoubleOrDefault(fields[5], 0.0));  // SalesPrice
 
-                    preparedStatement.setString(7, fields.length > 6 ? fields[6] : null);  // SalesStartDate (optional)
-                    preparedStatement.setString(8, fields.length > 7 ? fields[7] : null);  // SalesEndDate (optional)
-                    preparedStatement.setString(9, fields.length > 8 ? fields[8] : null);  // Title (optional)
-                    preparedStatement.setInt(10, fields.length > 9 && !fields[9].isEmpty() ? Integer.parseInt(fields[9]) : 0);  // CategoryID
-                    preparedStatement.setString(11, fields.length > 10 ? fields[10] : null);  // CategoryName (optional)
-                    preparedStatement.setDouble(12, parseDoubleOrDefault(fields.length > 11 ? fields[11] : "", 0.0));  // MSRP
-                    preparedStatement.setDouble(13, parseDoubleOrDefault(fields.length > 12 ? fields[12] : "", 0.0));  // MAP
-                    preparedStatement.setDouble(14, parseDoubleOrDefault(fields.length > 13 ? fields[13] : "", 0.0));  // ShippingCost
-                    preparedStatement.setDouble(15, parseDoubleOrDefault(fields.length > 14 ? fields[14] : "", 0.0));  // CanadaShippingCost
-                    preparedStatement.setBoolean(16, fields.length > 15 && !fields[15].isEmpty() && Boolean.parseBoolean(fields[15]));  // Active
-                    preparedStatement.executeUpdate();
+                    preparedStatement.setString(7, !fields[6].isEmpty() ? fields[6] : null);  // SalesStartDate (optional)
+                    preparedStatement.setString(8, !fields[7].isEmpty() ?  fields[7] : null);  // SalesEndDate (optional)
+                    preparedStatement.setString(9, fields[8]);  // Title (optional)
+                    preparedStatement.setInt(10, !fields[9].isEmpty() ? Integer.parseInt(fields[9]) : 0);  // CategoryID
+                    preparedStatement.setString(11, fields[10]);  // CategoryName (optional)
+                    preparedStatement.setDouble(12, parseDoubleOrDefault(fields[11], 0.0));  // MSRP
+                    preparedStatement.setDouble(13, parseDoubleOrDefault(fields[12], 0.0));  // MAP
+                    preparedStatement.setDouble(14, parseDoubleOrDefault(fields[13], 0.0));  // ShippingCost
+                    preparedStatement.setDouble(15, parseDoubleOrDefault(fields[14], 0.0));  // CanadaShippingCost
+                    preparedStatement.setBoolean(16, fields.length > 15 && !fields[15].isEmpty() && Boolean.parseBoolean(fields[15]));// Active
+                    preparedStatement.addBatch();
+                    if(++count % batchSize == 0) {
+                        preparedStatement.executeBatch();
+                    }
                 }
             }
-
+            preparedStatement.executeBatch();
+            connection.commit();
             connection.close();
             System.out.println("Product data inserted successfully.");
 
@@ -111,8 +122,9 @@ public class VendorImpl extends Vendor {
             return defaultValue;  // Return default value in case of invalid number format
         }
     }
+
+
     @Override
     public void readInventoryData() {
-        // Similar to readProductData but only updates `QuantityInStock` and `Active` columns
     }
 }
